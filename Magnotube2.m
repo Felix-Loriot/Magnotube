@@ -1,0 +1,355 @@
+close all;
+clear all;
+clc;
+
+s = serialport("COM10", 1500000, "Timeout", 3, "ByteOrder", "little-endian");
+configureTerminator(s, "LF");
+pause(2);
+flush(s);
+
+%Alarmsound preparation
+[audioData, Fs] = audioread('Alarmsound.mp3');
+player = audioplayer(audioData,Fs);
+alarm_old = false;
+
+
+counter=0;
+% Grid for 2D quiver plot
+[I, J] = ndgrid(1:8, 1:8);
+
+% Grid for 3D quiver plot
+[L, M, N] = ndgrid(1:8, 1:8, 1);
+
+% Grid for surface plot
+interpolating_factor = 5;
+[Xg, Yg] = meshgrid(1:8);
+[Xq, Yq] = meshgrid(1:1/interpolating_factor:8);
+
+% Window Settings
+screen_size = get(0, 'ScreenSize');
+screen_height = screen_size(3);
+screen_width = screen_size(2);
+
+window_width = screen_height / 2;
+window_height = screen_height / 2.22;
+window_x_pos = 2000;
+window_y_pos = 100;
+
+fig = figure('Position', [window_x_pos window_y_pos window_width window_height]);
+
+% Preparations for plots
+% 2D quiver plot XY
+subplot(2,3,1);
+q1 = quiver(J, I, zeros(8), zeros(8));
+axis equal tight
+xlim([0.5, 8.5]);
+ylim([0.5, 8.5]);
+xlabel('y');
+ylabel('x');
+title('x - y');
+
+% 3D quiver plot XYZ
+subplot(2,3,2);
+q4 = quiver3( ...
+    M, L, N, ...
+    zeros(8), zeros(8), zeros(8), ...
+    'AutoScale', 'on', ...
+    'AutoScaleFactor', 0.4, ...
+    'LineWidth', 1 ...
+);
+xlim([0.5, 8.5]); ylim([0.5, 8.5]); zlim([0.5, 1.5]);
+xlabel('y');
+ylabel('x');
+zlabel('z');
+camproj('perspective');
+view(20, 60);
+grid on
+title('x - y - z');
+
+% 2D surface plot XYZ
+ax = subplot(2,3,3);
+q6 = surf(Xg, Yg, zeros(8), 'EdgeColor', 'none');
+hold on
+axis auto
+q61 = scatter3(0, 0, 0, 50, 'r', 'filled');
+hold off
+xlim([0.5, 8.5]); ylim([0.5, 8.5]); zlim([-0.5, 10000.5]);
+xlabel('y');
+ylabel('x');
+zlabel('z');
+shading interp;
+view(2);
+grid on
+title('Absolute Strength');
+
+% 3D surface plot XY
+subplot(2,3,4);
+q5 = surf(Xg, Yg, zeros(8), 'EdgeColor', 'none');
+hold on
+axis auto
+q51 = scatter3(0, 0, 0, 50, 'r', 'filled');
+hold off
+set(gca, 'zscale', 'log');
+xlim([1, 8]); ylim([1, 8]); zlim([1e-1, 10000]);
+xlabel('y');
+ylabel('x');
+zticks([0.1 1 10 100 1000]);
+shading interp;
+camproj('perspective');
+view(20, 60);
+grid on
+title('Absolute Strength');
+
+
+subplot(2,3,[5 6]);
+img = imread('C:\Users\User\Pictures\Trachea.jpeg');
+%img = imread('C:\Users\abstr\OneDrive\Dokumente\uni\Elektrotechnik\Semester 6\Bachelorprojekt\Sensorfusion\trachea_plot.png');
+imshow(img);
+
+axis image
+axis on
+hold on
+
+img_size = size(img);
+xlim([0 img_size(2)])
+ylim([0 img_size(1)])
+set(gca, 'YDir','reverse');
+title('Position des Tubus in der Trachea')
+
+
+% Startposition
+px = 280;
+py = 120;
+
+%Kalibrierung 
+centerX = px;
+centerY = py;
+offsetX = 0;
+offsetY = 0;
+
+% Magnetpunkt
+h_point = plot(px, py, 'ro', 'MarkerSize', 8, 'LineWidth', 2);
+
+% Alarm-Kreis 
+theta = linspace(0,2*pi,50);
+r = 35; % Radius in Pixel
+
+h_circle = fill( ...
+    px + r*cos(theta), ...
+    py + r*sin(theta), ...
+    [1 0 1], ... % grün
+    'FaceAlpha',0.2, ...
+    'EdgeColor','none');
+
+% Distal-Pfeil
+%h_dist = quiver(px, py, 0, -50, ...
+%    'LineWidth',2,'Color','g','MaxHeadSize',2);
+
+% Posterior-Pfeil
+%h_post = quiver(px, py, 50, 0, ...
+%    'LineWidth',2,'Color','b','MaxHeadSize',2);
+
+
+b1 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Magnetic Reset');
+b1.Position = [window_width/2-430 10 200 25];
+b2 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Zero');
+b2.Position = [window_width/2-210 10 200 25];
+b3 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Magnetic Reset & Zero');
+b3.Position = [window_width/2+10 10 200 25];
+b4 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Set Correlation Point');
+b4.Position = [window_width/2+230 10 200 25];
+
+% --- Initialisierung Gerät ---
+writeline(s, "format bin");
+ack = readline(s);
+disp("ACK format bin: " + strtrim(ack));
+
+writeline(s, "averaging 8");
+ack = readline(s);
+disp("ACK averaging 8: " + strtrim(ack));
+
+flush(s);
+
+% Get reference
+writeline(s, "measurement auto");
+while s.NumBytesAvailable < 1024
+    pause(0.1);
+end
+
+data = read(s, 256, "single");  % 64 Sensoren * 4 Werte = 256 singles
+data_matrix = reshape(data, 4, 64);
+
+ack = readline(s);
+disp("ACK measurement auto: " + strtrim(ack));
+if ~strcmp(strtrim(ack), "Done")
+    error("Protocol error after measurement auto. ACK = '%s'", strtrim(ack));
+end
+
+vx_ref = data_matrix(1, :);
+vy_ref = data_matrix(2, :);
+vz_ref = data_matrix(3, :);
+
+c_point = zeros(8);
+freq = zeros(50,1);
+also_zero = false;
+
+while(1)
+    tic;
+
+
+    if (b1.Value == true || b3.Value == true) % Magnetic Reset
+        if (b3.Value == true)
+            also_zero = true;
+        end
+
+        writeline(s, "reset");
+        ack = readline(s);
+        disp("ACK reset: " + strtrim(ack));
+
+        if strcmp(strtrim(ack), "Done")
+            fprintf("Magnetic reset successful\n");
+        else
+            fprintf("Error during magnetic reset: %s\n", strtrim(ack));
+            break;
+        end
+
+        flush(s);
+
+        if (b1.Value == true)
+            b1.Value = false;
+        end
+    end
+
+    % Daten anfordern
+    writeline(s, "measurement read 0-63");
+    while s.NumBytesAvailable < 1024
+    pause(0.1);
+     end
+counter = counter +1;
+fprintf("counter: %d \n", counter);
+data = read(s, 256, "single");
+    % Abschlussbestätigung lesen
+    ack = readline(s);
+    disp("ACK measurement read: " + strtrim(ack));
+    if ~strcmp(strtrim(ack), "Done")
+        error("Protocol error after measurement read. ACK = '%s'", strtrim(ack));
+    end
+
+    % Nächste Messung starten
+    writeline(s, "measurement start 0-63");
+    ack = readline(s);
+    disp("ACK measurement start: " + strtrim(ack));
+    if ~strcmp(strtrim(ack), "Done")
+        error("Protocol error after measurement start. ACK = '%s'", strtrim(ack));
+    end
+
+    % Daten umformatieren
+    data_matrix = reshape(data, 4, 64);
+
+    if (b2.Value == true || also_zero == true) % Zero
+        vx_ref = data_matrix(1, :);
+        vy_ref = data_matrix(2, :);
+        vz_ref = data_matrix(3, :);
+
+        if (b2.Value == true)
+            b2.Value = false;
+        end
+        if (also_zero == true)
+            b3.Value = false;
+            also_zero = false;
+        end
+    end
+
+    vx = data_matrix(1, :) - vx_ref;
+    vy = data_matrix(2, :) - vy_ref;
+    vz = data_matrix(3, :) - vz_ref;
+
+    % In 8×8 Matrizen umformen
+    X = fliplr(reshape(vx, 8, 8)).';
+    Y = fliplr(reshape(vy, 8, 8)).';
+    Z = fliplr(reshape(-vz, 8, 8)).';
+
+    % Betrag errechnen
+    V = sqrt(X.^2 + Y.^2 + Z.^2);
+    Vq = interp2(Xg, Yg, V, Xq, Yq, 'cubic');
+
+    if (b4.Value == true)
+        centerX = px;
+        centerY = py;
+        c_point = V;
+        b4.Value = false;
+    end
+
+    % Maximum
+    [maxValue, maxIndex] = max(Vq(:));
+    [maxY, maxX] = ind2sub(size(Vq), maxIndex);
+    maxX = maxX / interpolating_factor + (interpolating_factor - 1) / interpolating_factor;
+    maxY = maxY / interpolating_factor + (interpolating_factor - 1) / interpolating_factor;
+    
+    x_offset = 200; 
+    y_offset = 250;
+    pixel_scale = 40; 
+    
+    px = x_offset + (maxX - 4)*pixel_scale;
+    py = y_offset - (maxY - 4)*pixel_scale;
+
+    %Für grafische kallibration
+    dx = px - centerX;
+    dy = py - centerY;
+
+    px_plot = 280 + dx;
+    py_plot = 120 + dy;
+    alpha = 0.8;
+
+    px_old = px;
+    py_old = py;
+    px = alpha*px_old + (1-alpha)*px;
+    py = alpha*py_old + (1-alpha)*py;
+
+    %Alarmsystemberechnung
+    dist = sqrt((px - centerX)^2 +(py - centerY)^2);
+    alarm = dist > r;
+
+    % Vector data aktualisieren
+    set(q1, 'UData', Y, 'VData', X);
+    set(q4, 'UData', Y, 'VData', X, 'WData', Z);
+    set(q5, 'XData', Xq, 'YData', Yq, 'ZData', Vq);
+    set(q51, 'XData', maxX, 'YData', maxY, 'ZData', maxValue);
+    set(q6, 'XData', Xq, 'YData', Yq, 'ZData', Vq);
+    set(q61, 'XData', maxX, 'YData', maxY, 'ZData', maxValue);
+
+    drawnow limitrate;
+
+    freq = circshift(freq, 1);
+    freq(1) = 1 / toc;
+    fprintf('Frequency: %f Hz\n', mean(freq));
+    
+    %Alarmsystem aktion
+    if alarm
+    set(h_point, 'Color', 'r', 'MarkerSize', 15);
+    % Nur starten wenn:
+    % 1. Alarm gerade neu ist
+    % 2. Kein Sound läuft
+        if alarm && ~alarm_old && strcmp(player.Running, 'off')
+            play(player);
+        end
+
+
+    else
+    set(h_point, 'Color', 'g', 'MarkerSize', 8);
+    end
+
+    alarm_old = alarm;
+
+       %set(h_point, ...
+    %'XData', px, ...
+    %'YData', py);
+set(h_point, ...
+    'XData', px_plot, ...
+    'YData', py_plot);
+
+
+    
+
+
+end
