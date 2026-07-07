@@ -12,7 +12,7 @@ flush(s);
 player = audioplayer(audioData,Fs);
 alarm_old = false;
 
-
+%Counter = Amount of measurements for debugging purposes
 counter=0;
 % Grid for 2D quiver plot
 [I, J] = ndgrid(1:8, 1:8);
@@ -128,7 +128,7 @@ offsetX = 0;
 offsetY = 0;
 
 % Magnetpunkt
-h_point = plot(px, py, 'ro', 'MarkerSize', 8, 'LineWidth', 2);
+h_point = plot(px, py, 'o', 'MarkerSize', 8, 'LineWidth', 2, 'MarkerEdgeColor', 'k', 'MarkerFaceColor', 'k');
 
 % Alarm-Kreis 
 theta = linspace(0,2*pi,50);
@@ -137,8 +137,8 @@ r = 35; % Radius in Pixel
 h_circle = fill( ...
     px + r*cos(theta), ...
     py + r*sin(theta), ...
-    [1 0 1], ... % grün
-    'FaceAlpha',0.2, ...
+    [0 1 0], ... % grün
+    'FaceAlpha',0.5, ...
     'EdgeColor','none');
 
 % Distal-Pfeil
@@ -326,7 +326,10 @@ data = read(s, 256, "single");
     
     %Alarmsystem aktion
     if alarm
-    set(h_point, 'Color', 'r', 'MarkerSize', 15);
+    
+    %Circle color to red when alarm
+    set(h_circle, 'FaceColor', 'r');
+    % FOR DEBUGGING set(h_point, 'Color', 'r', 'MarkerSize', 15);
     % Nur starten wenn:
     % 1. Alarm gerade neu ist
     % 2. Kein Sound läuft
@@ -336,7 +339,8 @@ data = read(s, 256, "single");
 
 
     else
-    set(h_point, 'Color', 'g', 'MarkerSize', 8);
+    %Set circle to green when no alarm
+    set(h_circle, 'FaceColor', [0 1 0]);
     end
 
     alarm_old = alarm;
