@@ -2,7 +2,7 @@ close all;
 clear all;
 clc;
 
-s = serialport("COM10", 1500000, "Timeout", 3, "ByteOrder", "little-endian");
+s = serialport("COM4", 1500000, "Timeout", 3, "ByteOrder", "little-endian");
 configureTerminator(s, "LF");
 pause(2);
 flush(s);
@@ -102,9 +102,14 @@ title('Absolute Strength');
 
 
 subplot(2,3,[5 6]);
-img = imread('C:\Users\User\Pictures\Trachea.jpeg');
-%img = imread('C:\Users\abstr\OneDrive\Dokumente\uni\Elektrotechnik\Semester 6\Bachelorprojekt\Sensorfusion\trachea_plot.png');
+%Old Trachea picture
+%img = imread('Trachea.jpeg');
+
+%New own Trachea picture
+img = imread('TracheaNew.jpeg');
+img = rot90(img, 1);
 imshow(img);
+
 
 axis image
 axis on
@@ -130,6 +135,15 @@ offsetY = 0;
 % Magnetpunkt
 h_point = plot(px, py, 'o', 'MarkerSize', 8, 'LineWidth', 2, 'MarkerEdgeColor', 'k', 'MarkerFaceColor', 'k');
 
+% Nachlaufspur
+trailTime = 0.5;        % Sekunden sichtbar
+
+trailX = [];
+trailY = [];
+trailT = [];
+
+h_trail = scatter([],[],25,'k','filled');
+
 % Alarm-Kreis 
 theta = linspace(0,2*pi,50);
 r = 35; % Radius in Pixel
@@ -141,14 +155,7 @@ h_circle = fill( ...
     'FaceAlpha',0.5, ...
     'EdgeColor','none');
 
-% Distal-Pfeil
-%h_dist = quiver(px, py, 0, -50, ...
-%    'LineWidth',2,'Color','g','MaxHeadSize',2);
-
-% Posterior-Pfeil
-%h_post = quiver(px, py, 50, 0, ...
-%    'LineWidth',2,'Color','b','MaxHeadSize',2);
-
+%Buttons
 
 b1 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Magnetic Reset');
 b1.Position = [window_width/2-430 10 200 25];
@@ -158,6 +165,8 @@ b3 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Magnetic Reset & Zero');
 b3.Position = [window_width/2+10 10 200 25];
 b4 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Set Correlation Point');
 b4.Position = [window_width/2+230 10 200 25];
+%b5 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Switch Trachea Display');
+%b5.Position = [window_width/2+430 10 200 25];
 
 % --- Initialisierung Gerät ---
 writeline(s, "format bin");
@@ -192,6 +201,9 @@ vz_ref = data_matrix(3, :);
 c_point = zeros(8);
 freq = zeros(50,1);
 also_zero = false;
+
+% Starttime for trail
+startTime = tic;
 
 while(1)
     tic;
@@ -348,6 +360,26 @@ data = read(s, 256, "single");
        %set(h_point, ...
     %'XData', px, ...
     %'YData', py);
+
+currentTime = toc(startTime);
+
+% Neue Position speichern
+trailX(end+1) = px_plot;
+trailY(end+1) = py_plot;
+trailT(end+1) = currentTime;
+
+% Nur Punkte behalten, die jünger als trailTime sind
+idx = trailT >= currentTime - trailTime;
+
+trailX = trailX(idx);
+trailY = trailY(idx);
+trailT = trailT(idx);
+
+% Spur aktualisieren
+set(h_trail,...
+    'XData',trailX,...
+    'YData',trailY);
+
 set(h_point, ...
     'XData', px_plot, ...
     'YData', py_plot);
