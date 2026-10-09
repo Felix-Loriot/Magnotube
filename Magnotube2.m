@@ -2,7 +2,7 @@ close all;
 clear all;
 clc;
 
-s = serialport("COM4", 1500000, "Timeout", 3, "ByteOrder", "little-endian");
+s = serialport("COM10", 1500000, "Timeout", 3, "ByteOrder", "little-endian");
 configureTerminator(s, "LF");
 pause(2);
 flush(s);
@@ -32,7 +32,7 @@ screen_width = screen_size(2);
 
 window_width = screen_height / 2;
 window_height = screen_height / 2.22;
-window_x_pos = 2000;
+window_x_pos = 1000;
 window_y_pos = 100;
 
 fig = figure('Position', [window_x_pos window_y_pos window_width window_height]);
@@ -102,14 +102,9 @@ title('Absolute Strength');
 
 
 subplot(2,3,[5 6]);
-%Old Trachea picture
-%img = imread('Trachea.jpeg');
-
-%New own Trachea picture
-img = imread('TracheaNew.jpeg');
-img = rot90(img, 1);
+img = imread('C:\Users\User\Pictures\Trachea.jpeg');
+%img = imread('C:\Users\abstr\OneDrive\Dokumente\uni\Elektrotechnik\Semester 6\Bachelorprojekt\Sensorfusion\trachea_plot.png');
 imshow(img);
-
 
 axis image
 axis on
@@ -122,40 +117,38 @@ set(gca, 'YDir','reverse');
 title('Position des Tubus in der Trachea')
 
 
-% Startposition
-px = 280;
-py = 120;
+% Startposition im Tracheabild
+startX = 280;
+startY = 120;
 
-%Kalibrierung 
-centerX = px;
-centerY = py;
-offsetX = 0;
-offsetY = 0;
+%--- Kalibrierung und Mapping Vorbereitungen--- 
+%Startposition vorerst
+calibrated = false;
+maxX_ref = 0;
+maxY_ref = 0;
 
-% Magnetpunkt
-h_point = plot(px, py, 'o', 'MarkerSize', 8, 'LineWidth', 2, 'MarkerEdgeColor', 'k', 'MarkerFaceColor', 'k');
+imageCenterX = startX;
+imageCenterY = startY;
 
-% Nachlaufspur
-trailTime = 0.5;        % Sekunden sichtbar
+scale_x = 40;
+scale_y = 40;
 
-trailX = [];
-trailY = [];
-trailT = [];
-
-h_trail = scatter([],[],25,'k','filled');
+px_plot = startX;
+py_plot = startY;
+% Punkt für Magnetmaximum
+h_point = plot(px_plot, py_plot, 'o', 'MarkerSize', 8, 'LineWidth', 2, 'MarkerEdgeColor', 'k', 'MarkerFaceColor', 'k');
 
 % Alarm-Kreis 
 theta = linspace(0,2*pi,50);
-r = 35; % Radius in Pixel
-
+r = 35; % Erlaubter Radius in Pixeln
 h_circle = fill( ...
-    px + r*cos(theta), ...
-    py + r*sin(theta), ...
-    [0 1 0], ... % grün
+    px_plot + r*cos(theta), ...
+    py_plot + r*sin(theta), ...
+    [1 0 1], ... % grün
     'FaceAlpha',0.5, ...
     'EdgeColor','none');
 
-%Buttons
+
 
 b1 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Magnetic Reset');
 b1.Position = [window_width/2-430 10 200 25];
@@ -165,8 +158,6 @@ b3 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Magnetic Reset & Zero');
 b3.Position = [window_width/2+10 10 200 25];
 b4 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Set Correlation Point');
 b4.Position = [window_width/2+230 10 200 25];
-%b5 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Switch Trachea Display');
-%b5.Position = [window_width/2+430 10 200 25];
 
 % --- Initialisierung Gerät ---
 writeline(s, "format bin");
@@ -198,12 +189,9 @@ vx_ref = data_matrix(1, :);
 vy_ref = data_matrix(2, :);
 vz_ref = data_matrix(3, :);
 
-c_point = zeros(8);
+%c_point = zeros(8); Kann raus?
 freq = zeros(50,1);
 also_zero = false;
-
-% Starttime for trail
-startTime = tic;
 
 while(1)
     tic;
@@ -232,14 +220,24 @@ while(1)
         end
     end
 
-    % Daten anfordern
+    % Daten anfordern mit Timeout für unvollständigen Dateneingang
+
     writeline(s, "measurement read 0-63");
+    timeout = 2; %timeout in s GENAUEN WERT BERECHNEN
+    t_receive = tic;
+
     while s.NumBytesAvailable < 1024
-    pause(0.1);
+     if toc(t_receive) >= timeout
+         error ("Timeout: Messdaten nicht vollständig empfangen.");
      end
-counter = counter +1;
-fprintf("counter: %d \n", counter);
-data = read(s, 256, "single");
+     pause(0.01);
+     end
+
+     %Debugging counter
+     counter = counter +1;
+    fprintf("counter: %d \n", counter);
+
+    data = read(s, 256, "single");
     % Abschlussbestätigung lesen
     ack = readline(s);
     disp("ACK measurement read: " + strtrim(ack));
@@ -285,10 +283,12 @@ data = read(s, 256, "single");
     V = sqrt(X.^2 + Y.^2 + Z.^2);
     Vq = interp2(Xg, Yg, V, Xq, Yq, 'cubic');
 
+    %Kallibrierungsbutton gedrückt
     if (b4.Value == true)
-        centerX = px;
-        centerY = py;
-        c_point = V;
+        maxX_ref = maxX;
+        maxY_ref = maxY;
+        calibrated = true;
+    
         b4.Value = false;
     end
 
@@ -298,28 +298,22 @@ data = read(s, 256, "single");
     maxX = maxX / interpolating_factor + (interpolating_factor - 1) / interpolating_factor;
     maxY = maxY / interpolating_factor + (interpolating_factor - 1) / interpolating_factor;
     
-    x_offset = 200; 
-    y_offset = 250;
-    pixel_scale = 40; 
-    
-    px = x_offset + (maxX - 4)*pixel_scale;
-    py = y_offset - (maxY - 4)*pixel_scale;
+    %Mapping des Sensorgitters auf das Tracheabild
+    if calibrated
+        dx = maxX - maxX_ref;
+        dy = maxY - maxY_ref;
 
-    %Für grafische kallibration
-    dx = px - centerX;
-    dy = py - centerY;
+        px_plot = imageCenterX + scale_x * dx;
+        py_plot = imageCenterY - scale_y * dy;
 
-    px_plot = 280 + dx;
-    py_plot = 120 + dy;
-    alpha = 0.8;
+    else
+        px_plot = imageCenterX;
+        py_plot = imageCenterY;
+    end
 
-    px_old = px;
-    py_old = py;
-    px = alpha*px_old + (1-alpha)*px;
-    py = alpha*py_old + (1-alpha)*py;
-
+  
     %Alarmsystemberechnung
-    dist = sqrt((px - centerX)^2 +(py - centerY)^2);
+    dist = sqrt((px_plot - imageCenterX)^2 +(py_plot - imageCenterY)^2);
     alarm = dist > r;
 
     % Vector data aktualisieren
@@ -356,30 +350,7 @@ data = read(s, 256, "single");
     end
 
     alarm_old = alarm;
-
-       %set(h_point, ...
-    %'XData', px, ...
-    %'YData', py);
-
-currentTime = toc(startTime);
-
-% Neue Position speichern
-trailX(end+1) = px_plot;
-trailY(end+1) = py_plot;
-trailT(end+1) = currentTime;
-
-% Nur Punkte behalten, die jünger als trailTime sind
-idx = trailT >= currentTime - trailTime;
-
-trailX = trailX(idx);
-trailY = trailY(idx);
-trailT = trailT(idx);
-
-% Spur aktualisieren
-set(h_trail,...
-    'XData',trailX,...
-    'YData',trailY);
-
+%aktualsiere Magnetmaximumpunkt
 set(h_point, ...
     'XData', px_plot, ...
     'YData', py_plot);
