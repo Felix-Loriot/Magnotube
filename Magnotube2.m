@@ -10,7 +10,6 @@ flush(s);
 %Alarmsound preparation
 [audioData, Fs] = audioread('Alarmsound.mp3');
 player = audioplayer(audioData,Fs);
-alarm_old = false;
 
 %Counter = Amount of measurements for debugging purposes
 counter=0;
@@ -102,8 +101,8 @@ title('Absolute Strength');
 
 
 subplot(2,3,[5 6]);
-img = imread('C:\Users\User\Pictures\Trachea.jpeg');
-%img = imread('C:\Users\abstr\OneDrive\Dokumente\uni\Elektrotechnik\Semester 6\Bachelorprojekt\Sensorfusion\trachea_plot.png');
+img = imread('TracheaV2.jpeg');
+img = rot90(img, 1);
 imshow(img);
 
 axis image
@@ -118,8 +117,8 @@ title('Position des Tubus in der Trachea')
 
 
 % Startposition im Tracheabild
-startX = 280;
-startY = 120;
+startX = 753;
+startY = 753;
 
 %--- Kalibrierung und Mapping Vorbereitungen--- 
 %Startposition vorerst
@@ -130,8 +129,8 @@ maxY_ref = 0;
 imageCenterX = startX;
 imageCenterY = startY;
 
-scale_x = 40;
-scale_y = 40;
+scale_x = 60;
+scale_y = 60;
 
 px_plot = startX;
 py_plot = startY;
@@ -140,7 +139,7 @@ h_point = plot(px_plot, py_plot, 'o', 'MarkerSize', 8, 'LineWidth', 2, 'MarkerEd
 
 % Alarm-Kreis 
 theta = linspace(0,2*pi,50);
-r = 35; % Erlaubter Radius in Pixeln
+r = 160; % Erlaubter Radius in Pixeln
 h_circle = fill( ...
     px_plot + r*cos(theta), ...
     py_plot + r*sin(theta), ...
@@ -226,24 +225,30 @@ while(1)
     timeout = 2; %timeout in s GENAUEN WERT BERECHNEN
     t_receive = tic;
 
-    while s.NumBytesAvailable < 1024
-     if toc(t_receive) >= timeout
-         error ("Timeout: Messdaten nicht vollständig empfangen.");
-     end
-     pause(0.01);
-     end
 
-     %Debugging counter
-     counter = counter +1;
-    fprintf("counter: %d \n", counter);
-
-    data = read(s, 256, "single");
-    % Abschlussbestätigung lesen
-    ack = readline(s);
-    disp("ACK measurement read: " + strtrim(ack));
-    if ~strcmp(strtrim(ack), "Done")
-        error("Protocol error after measurement read. ACK = '%s'", strtrim(ack));
+while s.NumBytesAvailable < 1024
+    if toc(t_receive) >= timeout
+        fprintf("TIMEOUT: %d von 1024 Bytes empfangen.\n", ...
+            s.NumBytesAvailable);
+        error("Messdaten unvollständig empfangen.");
     end
+
+    pause(0.01);
+end
+
+fprintf("Vollständige Messdaten empfangen: %d Bytes\n", ...
+    s.NumBytesAvailable);
+
+data = read(s, 256, "single");
+
+% Abschlussbestätigung lesen
+ack = readline(s);
+disp("ACK measurement read: " + strtrim(ack));
+
+if ~strcmp(strtrim(ack), "Done")
+    error("Protocol error after measurement read. ACK = '%s'", ...
+        strtrim(ack));
+end
 
     % Nächste Messung starten
     writeline(s, "measurement start 0-63");
@@ -339,7 +344,7 @@ while(1)
     % Nur starten wenn:
     % 1. Alarm gerade neu ist
     % 2. Kein Sound läuft
-        if alarm && ~alarm_old && strcmp(player.Running, 'off')
+        if alarm && strcmp(player.Running, 'off')
             play(player);
         end
 
@@ -349,7 +354,6 @@ while(1)
     set(h_circle, 'FaceColor', [0 1 0]);
     end
 
-    alarm_old = alarm;
 %aktualsiere Magnetmaximumpunkt
 set(h_point, ...
     'XData', px_plot, ...
