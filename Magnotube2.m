@@ -1,7 +1,7 @@
 close all;
 clear all;
 clc;
-
+%1500000
 s = serialport("COM10", 1500000, "Timeout", 3, "ByteOrder", "little-endian");
 configureTerminator(s, "LF");
 pause(2);
@@ -134,8 +134,13 @@ scale_y = 60;
 
 px_plot = startX;
 py_plot = startY;
-% Punkt für Magnetmaximum
+% Punkt für Magnetmaximum im Tracheaplot
 h_point = plot(px_plot, py_plot, 'o', 'MarkerSize', 8, 'LineWidth', 2, 'MarkerEdgeColor', 'k', 'MarkerFaceColor', 'k');
+% Vorbereitungen für Tracheamaximumpunkte speichern (Nachleuchten)
+traillength = 10;
+trailPx = nan(1, traillength);
+trailPy = nan(1, traillength);
+h_trail = scatter(nan, nan, 20, 'k', 'filled');
 
 % Alarm-Kreis 
 theta = linspace(0,2*pi,50);
@@ -157,7 +162,8 @@ b3 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Magnetic Reset & Zero');
 b3.Position = [window_width/2+10 10 200 25];
 b4 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Set Correlation Point');
 b4.Position = [window_width/2+230 10 200 25];
-
+b5 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Persistence');
+b5.Position = [window_width/2+450 10 160 25];
 % --- Initialisierung Gerät ---
 writeline(s, "format bin");
 ack = readline(s);
@@ -222,7 +228,7 @@ while(1)
     % Daten anfordern mit Timeout für unvollständigen Dateneingang
 
     writeline(s, "measurement read 0-63");
-    timeout = 2; %timeout in s GENAUEN WERT BERECHNEN
+    timeout = 3; %timeout in s GENAUEN WERT BERECHNEN
     t_receive = tic;
 
 
@@ -328,7 +334,39 @@ end
     set(q51, 'XData', maxX, 'YData', maxY, 'ZData', maxValue);
     set(q6, 'XData', Xq, 'YData', Yq, 'ZData', Vq);
     set(q61, 'XData', maxX, 'YData', maxY, 'ZData', maxValue);
+    %aktualsiere Magnetmaximumpunkt im Plot
+    set(h_point,'XData', px_plot, 'YData', py_plot);
 
+    
+if b5.Value == 1
+    b5.String = 'Persistence: On';
+
+    % Aktuelle Position zum Verlauf hinzufügen
+    trailPx = [trailPx(2:end), px_plot];
+    trailPy = [trailPy(2:end), py_plot];
+
+    % Ältere Punkte kleiner, neueste Punkte größer
+    pointSizes = linspace(5, 60, traillength);
+
+    set(h_trail, ...
+        'XData', trailPx, ...
+        'YData', trailPy, ...
+        'SizeData', pointSizes);
+
+else
+    b5.String = 'Persistence: Off';
+
+    % Verlauf ausblenden und zurücksetzen
+    set(h_trail, ...
+        'XData', nan(1, traillength), ...
+        'YData', nan(1, traillength), ...
+        'SizeData', 20 * ones(1, traillength));
+
+    trailPx = nan(1, traillength);
+    trailPy = nan(1, traillength);
+end
+
+    
     drawnow limitrate;
 
     freq = circshift(freq, 1);
@@ -353,14 +391,5 @@ end
     %Set circle to green when no alarm
     set(h_circle, 'FaceColor', [0 1 0]);
     end
-
-%aktualsiere Magnetmaximumpunkt
-set(h_point, ...
-    'XData', px_plot, ...
-    'YData', py_plot);
-
-
-    
-
 
 end
