@@ -1,9 +1,8 @@
 close all;
 clear all;
 clc;
-%1500000
 s = serialport("COM10", 1500000, "Timeout", 3, "ByteOrder", "little-endian");
-configureTerminator(s, "LF");
+configureTerminator(s, "CR/LF");
 pause(2);
 flush(s);
 
@@ -164,6 +163,7 @@ b4 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Set Correlation Point');
 b4.Position = [window_width/2+230 10 200 25];
 b5 = uicontrol(fig, 'Style', 'togglebutton', 'String', 'Persistence');
 b5.Position = [window_width/2+450 10 160 25];
+
 % --- Initialisierung Gerät ---
 writeline(s, "format bin");
 ack = readline(s);
@@ -225,44 +225,79 @@ while(1)
         end
     end
 
-    % Daten anfordern mit Timeout für unvollständigen Dateneingang
 
-    writeline(s, "measurement read 0-63");
-    timeout = 3; %timeout in s GENAUEN WERT BERECHNEN
-    t_receive = tic;
+% Daten anfordern
+writeline(s, "measurement read 0-63");
 
+expectedBytes = 256 * 4;  % 256 single-Werte mit je 4 Bytes
+timeout = 3;              % Sekunden
+timedOut = false;         % timedOut flag   
+t_receive = tic;
 
+%Daten einlesen
 while s.NumBytesAvailable < 1024
+
     if toc(t_receive) >= timeout
-        fprintf("TIMEOUT: %d von 1024 Bytes empfangen.\n", ...
-            s.NumBytesAvailable);
-        error("Messdaten unvollständig empfangen.");
+        fprintf("\n--- Empfangsdiagnose ---\n");
+        fprintf("Zeit: %.3f s\n", toc(t_receive));
+        fprintf("Bytes im Puffer: %d\n", s.NumBytesAvailable);
+
+        % Bereits vorhandene Bytes sichern
+        n = s.NumBytesAvailable;
+        if n > 0
+            raw = read(s, n, "uint8");
+            fprintf("Erste Bytes (hex): ");
+            fprintf("%02X ", raw(1:min(20, numel(raw))));
+            fprintf("\n");
+        end
+
+        warning("Messdaten unvollständig empfangen.");
+        %Reset ausführen
+        writeline(s, "reset");
+        ack = readline(s);
+        disp("ACK reset: " + strtrim(ack));
+
+        if strcmp(strtrim(ack), "Done")
+            fprintf("Magnetic reset successful\n");
+        else
+            fprintf("Error during magnetic reset: %s\n", strtrim(ack));
+            break;
+        end
+        flush(s);
+        timedOut = true;
+        break;
     end
 
-    pause(0.01);
+    pause(0.05);
 end
 
-fprintf("Vollständige Messdaten empfangen: %d Bytes\n", ...
-    s.NumBytesAvailable);
+if timedOut
+    continue;
+end
+bytesBeforeRead = s.NumBytesAvailable;
+fprintf("Bytes vor dem Lesen: %d\n", bytesBeforeRead);
 
+% Genau 256 single-Werte einlesen
 data = read(s, 256, "single");
 
-% Abschlussbestätigung lesen
-ack = readline(s);
-disp("ACK measurement read: " + strtrim(ack));
+fprintf("Messwerte eingelesen: %d\n", numel(data));
 
-if ~strcmp(strtrim(ack), "Done")
-    error("Protocol error after measurement read. ACK = '%s'", ...
-        strtrim(ack));
+% Abschlussbestätigung lesen
+ack = strtrim(readline(s));
+disp("ACK measurement read: " + ack);
+
+if ~strcmp(ack, "Done")
+    error("Protocol error after measurement read. ACK = '%s'", ack);
 end
 
-    % Nächste Messung starten
-    writeline(s, "measurement start 0-63");
-    ack = readline(s);
-    disp("ACK measurement start: " + strtrim(ack));
-    if ~strcmp(strtrim(ack), "Done")
-        error("Protocol error after measurement start. ACK = '%s'", strtrim(ack));
-    end
+% Nächste Messung starten
+writeline(s, "measurement start 0-63");
+ack = strtrim(readline(s));
+disp("ACK measurement start: " + ack);
+
+if ~strcmp(ack, "Done")
+    error("Protocol error after measurement start. ACK = '%s'", ack);
+end
 
     % Daten umformatieren
     data_matrix = reshape(data, 4, 64);
