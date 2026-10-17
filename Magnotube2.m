@@ -133,7 +133,8 @@ scale_y = 60;
 
 px_plot = startX;
 py_plot = startY;
-% Punkt für Magnetmaximum im Tracheaplot
+% Punkt für Magnetmaximum im Tracheaplot px und py getauscht für Korrekte
+% darstellung
 h_point = plot(px_plot, py_plot, 'o', 'MarkerSize', 8, 'LineWidth', 2, 'MarkerEdgeColor', 'k', 'MarkerFaceColor', 'k');
 % Vorbereitungen für Tracheamaximumpunkte speichern (Nachleuchten)
 traillength = 10;
@@ -236,7 +237,6 @@ t_receive = tic;
 
 %Daten einlesen
 while s.NumBytesAvailable < 1024
-
     if toc(t_receive) >= timeout
         fprintf("\n--- Empfangsdiagnose ---\n");
         fprintf("Zeit: %.3f s\n", toc(t_receive));
@@ -349,8 +349,8 @@ end
         dx = maxX - maxX_ref;
         dy = maxY - maxY_ref;
 
-        px_plot = imageCenterX + scale_x * dx;
-        py_plot = imageCenterY - scale_y * dy;
+        px_plot = imageCenterX + scale_x * dy;
+        py_plot = imageCenterY - scale_y * dx;
 
     else
         px_plot = imageCenterX;
